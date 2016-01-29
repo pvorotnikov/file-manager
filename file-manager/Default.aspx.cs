@@ -1,4 +1,5 @@
-﻿using System;
+﻿using file_manager.Classes;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -10,78 +11,136 @@ namespace file_manager
 {
     public partial class _Default : Page
     {
-        protected FileInfo[] FileList;
-        protected DirectoryInfo Dir;
+        protected String RootPath;
+        protected String CurrentPath;
+        private String StorageRoot = "~/Storage/demouser";
+        private String[] AllowedExtensions = new String[] {
+            ".gif", ".pdf", ".png", ".jpg", ".jpeg",
+            ".doc", ".docx", ".xls", ".xlsx", ".txt",
+            ".psd", ".eps", ".zip", ".ai", ".ppt", ".pptx" };
 
-        /// <summary>
-        /// Catch load event
-        /// </summary>
-        /// <param name="sender"></param>
-        /// <param name="e"></param>
-        protected void Page_Load(object Sender, EventArgs E)
+        // Load page
+        protected void Page_Load(object sender, EventArgs e)
         {
-            String path = "./";
-            BuildTree(path, DirectoryView);
-            Dir = GetDirectoryInfo(path);
-            FileList = Dir.GetFiles();
+            CreateTree();
+        }
+
+        private void CreateTree()
+        {
+            RootPath = Server.MapPath(StorageRoot);
+
+            FilesTree.Nodes.Clear();
+
+            DirectoryInfo rootDirectory = new DirectoryInfo(RootPath);
+            PopulateFiles(rootDirectory.GetFiles());
+
+            TreeNode tree = CreateDirectoryNode(rootDirectory);
+            FilesTree.Nodes.Add(tree);
+            FilesTree.ExpandAll();
+        }
+
+        private TreeNode CreateDirectoryNode(DirectoryInfo directoryInfo)
+        {
+            TreeNode directoryNode = null;
+
+            if (directoryInfo.Exists)
+            {
+                directoryNode = new TreeNode(directoryInfo.Name) { Value = directoryInfo.FullName };
+
+                // directoryNode.NavigateUrl = "";
+                directoryNode.SelectAction = TreeNodeSelectAction.Select;
+
+                foreach (var directory in directoryInfo.GetDirectories())
+                {
+                    TreeNode tree = CreateDirectoryNode(directory);
+                    directoryNode.ChildNodes.Add(tree);
+                }
+            }
+
+            return directoryNode;
+        }
+
+        protected void CreateFolderBtn_Click(object sender, EventArgs e)
+        {
+            string directoryPath = Server.MapPath(string.Format("{0}/{1}", String.IsNullOrEmpty(CurrentPath) ?
+                RelativePath(RootPath) :
+                RelativePath(CurrentPath),
+                CreateFolderName.Text.Trim()));
+            if (!Directory.Exists(directoryPath))
+            {
+                Directory.CreateDirectory(directoryPath);
+                CreateTree();
+            }
+            else
+            {
+                ClientScript.RegisterStartupScript(this.GetType(), "alert", "alert('Directory already exists.');", true);
+            }
+        }
+
+        protected void DeleteFolderBtn_Click(object sender, EventArgs e)
+        {
+            if (!String.IsNullOrEmpty(CurrentPath) && !CurrentPath.Equals(RootPath))
+            {
+                string directoryPath = RelativePath(CurrentPath);
+
+                if (Directory.Exists(directoryPath))
+                {
+                    Directory.Delete(directoryPath);
+                }
+                else
+                {
+                    ClientScript.RegisterStartupScript(this.GetType(), "alert", "alert('Directory does not exist.');", true);
+                }
+            }
+            else
+            {
+                ClientScript.RegisterStartupScript(this.GetType(), "alert", "alert('You can't delete your root folder.');", true);
+            }
+
+        }
+
+        protected void FilesTree_SelectedNodeChanged(object sender, EventArgs e)
+        {
+            TreeView treeView = (TreeView)sender;
+            CurrentPath = treeView.SelectedValue;
+            DirectoryInfo currentDirectory = new DirectoryInfo(CurrentPath);
+            PopulateFiles(currentDirectory.GetFiles());
         }
 
 
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="DirPath"></param>
-        /// <returns></returns>
-        private DirectoryInfo GetDirectoryInfo(string DirPath)
+        protected void PopulateFiles(FileInfo[] files)
         {
-            try
+            List<FileEntry> fileList = new List<FileEntry>();
+            foreach (FileInfo file in files)
             {
-                DirectoryInfo Dir = new DirectoryInfo(DirPath);
-                return Dir;
+                fileList.Add(new FileEntry()
+                {
+                    FileName = file.Name,
+                    FileSize = GetFileSize(file.Length),
+                    FilePath = file.FullName,
+                    FileType = file.Extension
+                });
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.Message);
-            }
-            return null;
-        }
-    
 
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="DirPath"></param>
-        /// <param name="Tv"></param>
-        private void BuildTree(string DirPath, TreeView Tv)
-        {
-            //get root directory
-            DirectoryInfo RootDir = new DirectoryInfo(DirPath);
-
-            //create and add the root node to the tree view
-            TreeNode RootNode = new TreeNode(RootDir.Name, RootDir.FullName);
-            Tv.Nodes.Add(RootNode);
-
-            //begin recursively traversing the directory structure
-            TraverseTree(RootDir, RootNode);
+            FilesRepeater.DataSource = fileList;
+            FilesRepeater.DataBind();
         }
 
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="CurrentDir"></param>
-        /// <param name="CurrentNode"></param>
-        private void TraverseTree(DirectoryInfo CurrentDir, TreeNode CurrentNode)
+        protected String RelativePath(string fullName)
         {
-            //loop through each sub-directory in the current one
-            foreach (DirectoryInfo dir in CurrentDir.GetDirectories())
-            {
-                //create node and add to the tree view
-                TreeNode node = new TreeNode(dir.Name, dir.FullName);
-                CurrentNode.ChildNodes.Add(node);
+            return "/" + fullName.Replace(Server.MapPath("~/"), String.Empty).Replace(@"\", "/");
+        }
 
-                //recursively call same method to go down the next level of the tree
-                TraverseTree(dir, node);
-            }
+        private String GetFileSize(long fileSize)
+        {
+            return fileSize <= 999999 ?
+                String.Format("{0}{1}", (Math.Round((fileSize / 1024f), 2)).ToString(), " KB") :
+                String.Format("{0}{1}", (Math.Round((fileSize / 1024000f), 2)).ToString(), " MB)");
+        }
+
+        protected void DeleteFiles_Click(object sender, EventArgs e)
+        {
+
         }
     }
 }
